@@ -1,0 +1,294 @@
+index.ts
+import cors from "cors";
+import express from "express";
+import http from "http";
+import { Server } from "socket.io";
+import { PORT } from "./config/serverConfig";
+import roomHandler from "./Handler/roomHandler";
+
+const app = express();
+
+app.use(cors());
+
+const server = http.createServer(app);
+// This will create the express API as raw HTTP of node and on top of that we add the websocket?"
+
+const io = new Server(server, {
+    // This line creates a new Socket.IO server (io) and attaches it to your HTTP server (server)
+    cors: {
+        methods: ["GET", "POST"],
+        origin: "*",
+    },
+});
+
+io.on("connection", (socket) => {
+    console.log("user connected");
+    roomHandler(socket); // pass the socket connect so that each user can create and join the romm
+    socket.on("disconnect", () => {
+        console.log("user disconnected");
+    });
+});
+
+server.listen(PORT, () => {
+    console.log(`running on port ${PORT}`);
+});
+
+
+roomHandler.ts
+import { Socket } from "socket.io";
+import { v4 as uuidv4 } from "uuid";
+
+// below map stores for a room what all peers have joined<
+const rooms: Record<string, string[]> = {};
+//     In TypeScript, Record<K, V> means: “an object whose keys are of type K,
+// and whose values are of type V.”
+// Here, K is string (our room IDs), and V is string[] (arrays of peer IDs).
+
+const roomHandler = (socket: Socket) => {
+
+    const createRoom = () => {
+const roomId = uuidv4();
+socket.join(roomId);
+rooms[roomId] = [];
+/*
+{
+roomId1 : [s1, s2,s3],
+roomId2 : [s4, s5,s6]
+}
+Socket.IO internally creates (or updates) its own internal data structure, where it:
+Groups sockets (users’ connections) by room ID
+Each room holds a list of sockets
+That way, you can later emit events like:
+*/
+socket.emit("room-created", roomId);
+console.log(`room created with id : ${roomId}`);
+};
+
+// this function is executedd everytime a user  creator or joine joins the new room ?? why
+    const joinedRoom = ({roomId, peerId}: {roomId: string, peerId: string}) => {
+        console.log(`peerId in backend is : ${peerId} and roomId is ${roomId}`);
+
+        if (!roomId || !peerId) {
+    console.warn(" Invalid roomId or peerId:", { roomId, peerId });
+    return;
+  }
+
+        if (rooms[roomId]) {
+            console.log("inside the if of the joined room ");
+
+            console.log(`room Id in roomHandler joined room : ${roomId}`);
+            console.log(`new user  peerId: , ${peerId}, room joined : ${roomId}`);
+
+            rooms[roomId].push(peerId);
+            console.log(`added peer to room:`, rooms[roomId]);
+            console.log(`all rooms:`, rooms);
+
+            socket.join(roomId);
+
+            socket.on("ready", () => {
+    // from the frontednd when someone join the room we will emit a ready event
+    socket.to(roomId).emit("user-joined", {peerId});
+    // Which will automatically go to all sockets in that room.
+});
+
+// below event is for loging perpose
+            socket.emit("get-users", {
+    roomId,
+    participants : rooms[roomId],
+});
+
+    }
+
+};
+
+    socket.on("create-room", createRoom);
+    socket.on("joined-room", joinedRoom);
+};
+
+export default roomHandler;
+
+--- frontend 
+socketContext.tsx
+import SocketIoClient from "socket.io-client"; //connects your frontend to the backend WebSocket server
+import React, { createContext, useEffect, useState, useReducer } from "react";
+import { useNavigate } from "react-router-dom";
+import Peer from "peerjs";
+import { v4 as UUIDv4 } from "uuid";
+import { peerReducer } from "../Reducres/peerReducer";
+import { addPeerAction } from "../Actions/peerAction";
+
+const ws_Server = "http://localhost:5500/"; // backend websocket url
+console.log("🔥 I run on file import"); // <- runs once on import
+
+type SocketContextType = {
+  socket: any;
+  user: Peer | undefined;
+  stream: MediaStream | undefined;
+  peers : any;
+} | null;
+
+
+export const SocketContext = createContext<SocketContextType>(null);
+
+ const socket = SocketIoClient(ws_Server); // This actually connects to your backend using WebSocket.
+
+// socket becomes a Socket.IO client instance — 
+// an object that gives you access to all the real-time WebSocket features.
+// This object allows emitting and listening to WebSocket events like "room-created", 
+// "joined-room", etc.
+
+
+interface Props{
+    children :  //Built-in prop — React automatically passes whatever is inside the component’s opening and closing tags
+     React.ReactNode // Means this prop can contain anything React can render (JSX, text, etc.)
+}
+
+// “This component expects a children prop, which can be any valid React content (JSX, text, etc).”
+
+
+export  const SocketProvider : React.FC<Props> //This is a React Function Component (FC) that expects props in the shape defined by Props.
+= ({ children}) => {
+
+    const navigate = useNavigate();
+    const [user, setUser] = useState<Peer>()
+  const [stream, setSteam] = useState<MediaStream>();
+  const [peers, dispatch] = useReducer(peerReducer, {});
+  // here peer is the state
+
+  const fetchUserFeed = async() => {
+ const videoStream =    await navigator.mediaDevices.getUserMedia({video : true, audio : true});
+ console.log(`video strema : ${videoStream}`);
+ // A MediaStream is the object returned by getUserMedia().
+
+ setSteam(videoStream); // So React waits & re-renders once the stream is ready
+
+ /*
+ 
+ navigator.mediaDevices.getUserMedia(...) is a built-in browser function.
+It asks the user for permission to access webcam & mic.
+If the user says yes, it gives you a MediaStream object.
+That MediaStream contains the live feed from the camera/mic.
+You then save it to React state via setSteam(videoStream);
+ */
+  }
+
+
+useEffect(() => { 
+  const userId = UUIDv4();
+  const newPeer = new Peer(userId, {
+    host : "localhost",
+    port : 9000,
+    path : "/myapp"
+  });
+
+  setUser(newPeer);
+  fetchUserFeed();
+
+  const enterRoom = (roomId : string) => { 
+navigate(`/room/${roomId}`)
+  }
+
+  socket.on("room-created", enterRoom)
+},[])
+
+
+
+
+ useEffect(() => {
+        if(!user || !stream) return;
+
+        socket.on("user-joined", ({peerId}) => {
+            const call = user.call(peerId, stream);
+            console.log("Calling the new peer", peerId);
+            call.on("stream", () => {
+// "stream" event when the other user sends back their video/audio stream (like when they "pick up" your call).
+// incomingStream is the video/audio stream that you are receiving from them.
+                dispatch(addPeerAction(peerId, stream));
+            })
+        })
+
+        user.on("call", (call) => {
+            // what to do when other peers on the group call you when u joined
+            console.log("receiving a call");
+            call.answer(stream);
+            call.on("stream", (incomingStream) => {
+                dispatch(addPeerAction(call.peer, incomingStream));
+            })
+        })
+
+        socket.emit("ready");
+    }, [user, stream])
+
+   return (
+  <SocketContext.Provider value={{socket, user , stream,peers}}>
+{children}
+  </SocketContext.Provider>
+   );
+}
+room.tsx
+import { useContext, useEffect } from "react";
+import { useParams } from "react-router-dom";
+import { SocketContext } from "../context/socketcontext";
+import UserFeedComponent from "../components/UserFeedComponent";
+
+
+const Room : React.FC = () => {
+    const {id} = useParams();
+    const {socket, user, stream, peers} = useContext(SocketContext)!;
+
+
+    useEffect(() => {
+          if (user) {
+           console.log(`room id : ${id}, peerId : ${user.id}`);          
+  socket.emit("joined-room", {roomId : id, peerId : user.id})
+socket.on("get-users", ({ roomId, participants } :{ roomId : string, participants : string[] } ) => {
+console.log("fetch participants", roomId, participants);
+
+})        
+}
+    },[id, user, socket]);
+// id ->  might change when user switches rooms
+// user ->  (PeerJS object) might not exist at first (async)
+// socket ->  is being used, so it should be declared
+
+ return (
+  <div>
+    <h1>Room : {id}</h1>
+    <h1>my feed</h1>
+    <UserFeedComponent stream={stream}/>
+
+    <br />
+     <br />
+      <br />
+      <h3>Other user</h3>
+
+{Object.keys(peers).map((peerId) => (
+                    <>
+                        <UserFeedComponent key={peerId} stream={peers[peerId].stream} />
+                    </>
+                ))}
+  </div>
+)
+}
+
+export default Room;
+
+app.JSX
+import { Route, Routes } from "react-router-dom"
+import Home from "./pages/Home"
+import Room from "./pages/Room"
+function App() {
+
+  return (
+    <>
+    <Routes>
+<Route path="/" element={<Home />} />
+<Route path="/room/:id" element={<Room />} />
+
+    </Routes>
+    
+    </>
+  )
+}
+
+export default App
