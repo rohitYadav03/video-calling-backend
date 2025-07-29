@@ -1,8 +1,8 @@
 import cors from "cors";
 import express from "express";
 import http from "http";
-import { Server } from "socket.io";
 import { ExpressPeerServer } from "peer"; // ✅ ADD THIS
+import { Server } from "socket.io";
 import { PORT } from "./config/serverConfig";
 import roomHandler from "./Handler/roomHandler";
 
@@ -13,7 +13,7 @@ const server = http.createServer(app);
 
 //  ADD PEERJS SERVER SETUP HERE
 const peerServer = ExpressPeerServer(server, {
-  path: "/myapp"
+  path: "/myapp",
 });
 app.use("/peerjs", peerServer); // Serve PeerJS at /peerjs/myapp
 

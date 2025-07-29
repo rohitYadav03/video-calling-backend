@@ -2,14 +2,14 @@
   "name": "video-backend",
   "version": "1.0.0",
   "main": "dist/index.js",
-  "scripts": {
-    "prebuild": "tslint -c tslint.json -p tsconfig.json --fix",
-    "build": "tsc",
-    "watch": "tsc -w",
-    "prestart": "npm run build",
-    "start": "nodemon .",
-    "dev": "npx concurrently  --kill-others \"npm run watch\" \" npm start\" "
-  },
+ "scripts": {
+  "prebuild": "tslint -c tslint.json -p tsconfig.json --fix",
+  "build": "tsc",
+  "watch": "tsc -w",
+  "start": "node dist/index.js",
+  "dev": "npx concurrently --kill-others \"npm run watch\" \"nodemon .\""
+}
+,
   "keywords": [],
   "author": "",
   "license": "ISC",
